@@ -8,8 +8,11 @@ jobs:
     if: github.event.issue.pull_request && contains(github.event.comment.body, '@claude')
     runs-on: ubuntu-latest
     steps:
-      - name: Run Claude Action
-        uses: Jamsrayvictim213/f002-test@main
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Run Local Action
+        uses: ./
         with:
           settings: "config/claude-action-settings.json"
           github_token: ${{ secrets.GITHUB_TOKEN }}
