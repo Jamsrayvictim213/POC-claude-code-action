@@ -1,0 +1,49 @@
+name: F-002 Settings Provenance PoC
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+
+jobs:
+  claude:
+    if: |
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '@claude')
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Run Claude Code
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        env:
+          F002_PRIVILEGED_CANARY: "BASE_WORKFLOW_ONLY_CANARY_7f3b91"
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          trigger_phrase: "@claude"
+
+          # Critical prerequisite for F-002:
+          settings: "config/claude-action-settings.json"
+
+      - name: Show F-002 proof
+        if: always()
+        shell: bash
+        run: |
+          echo "========================================"
+          echo "F-002 SESSIONSTART HOOK PROOF"
+          echo "========================================"
+
+          if [ -f /tmp/f002-proof.txt ]; then
+            cat /tmp/f002-proof.txt
+            echo
+            echo "RESULT: marker exists"
+          else
+            echo "RESULT: marker DOES NOT exist"
+            exit 1
+          fi
