@@ -19,85 +19,86 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout base repository
+      - name: Checkout trusted base repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Show workspace before Claude
+      # STEP INI HANYA MEMERIKSA API KEY/BILLING
+      - name: Verify Anthropic API
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         shell: bash
         run: |
-          echo "===== BEFORE CLAUDE ====="
-          echo "PWD=$(pwd)"
-          echo
-          echo "Git branch:"
-          git branch --show-current || true
-          echo
-          echo "Settings file currently visible:"
-          cat config/claude-action-settings.json || true
-          echo
-          echo ".git exists:"
-          test -d .git && echo YES || echo NO
+          set +e
 
-      - name: Run Claude Code
+          CODE=$(curl -sS \
+            -o /tmp/anthropic-response.json \
+            -w "%{http_code}" \
+            https://api.anthropic.com/v1/messages \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            --data '{
+              "model": "claude-haiku-4-5-20251001",
+              "max_tokens": 8,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "Reply only OK"
+                }
+              ]
+            }')
+
+          echo "ANTHROPIC_HTTP_STATUS=$CODE"
+
+          if command -v jq >/dev/null 2>&1; then
+            jq '{type,error,model,stop_reason}' /tmp/anthropic-response.json
+          else
+            cat /tmp/anthropic-response.json
+          fi
+
+          if [ "$CODE" != "200" ]; then
+            echo "ANTHROPIC_PREFLIGHT_FAILED"
+            exit 1
+          fi
+
+          echo "ANTHROPIC_PREFLIGHT_OK"
+
+      - name: Show trusted settings before action
+        shell: bash
+        run: |
+          echo "===== TRUSTED BASE SETTINGS ====="
+          cat config/claude-action-settings.json
+
+      - name: Run vulnerable Claude Code Action
         id: claude
-        uses: anthropics/claude-code-action@9c5ddab2e6d17b83ea679153b31f1d5f023cf636
+
+        # GANTI SHA DI BAWAH DENGAN HASIL git rev-parse HEAD
+        uses: anthropics/claude-code-action@abc1234567890abc1234567890abc1234567890
+
         env:
-          F002_PRIVILEGED_CANARY: "BASE_WORKFLOW_ONLY_CANARY_7f3b91"
+          F002_PRIVILEGED_CANARY: "BASE_ONLY_CANARY_F002_7F3B91"
+
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           trigger_phrase: "@claude"
           settings: "config/claude-action-settings.json"
 
-      - name: Show F-002 diagnostics
+      - name: Read F-002 marker
         if: always()
         shell: bash
         run: |
           echo "========================================"
-          echo "F-002 DIAGNOSTICS"
-          echo "========================================"
-
-          echo
-          echo "[1] Current git branch:"
-          git branch --show-current || true
-
-          echo
-          echo "[2] Current repository settings file:"
-          if [ -f config/claude-action-settings.json ]; then
-            cat config/claude-action-settings.json
-          else
-            echo "repository settings file missing"
-          fi
-
-          echo
-          echo "[3] Claude user settings:"
-          if [ -f "$HOME/.claude/settings.json" ]; then
-            cat "$HOME/.claude/settings.json"
-          else
-            echo "~/.claude/settings.json missing"
-          fi
-
-          echo
-          echo "[4] Hook marker:"
-          if [ -f /tmp/f002-proof.txt ]; then
-            cat /tmp/f002-proof.txt
-          else
-            echo "/tmp/f002-proof.txt missing"
-          fi
-
-      - name: Show F-002 proof
-        if: always()
-        shell: bash
-        run: |
-          echo "========================================"
-          echo "F-002 SESSIONSTART HOOK PROOF"
+          echo "F-002 RESULT"
           echo "========================================"
 
           if [ -f /tmp/f002-proof.txt ]; then
             cat /tmp/f002-proof.txt
             echo
-            echo "RESULT: F-002 HOOK EXECUTED"
+            echo "F002_RESULT=VULNERABLE"
           else
-            echo "RESULT: marker DOES NOT exist"
+            echo "/tmp/f002-proof.txt does not exist"
+            echo "F002_RESULT=NOT_CONFIRMED"
             exit 1
           fi
