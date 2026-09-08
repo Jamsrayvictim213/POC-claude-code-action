@@ -1,0 +1,5 @@
+{
+  "env": {
+    "F002_BASE_CONFIG": "trusted-base-version"
+  }
+}
