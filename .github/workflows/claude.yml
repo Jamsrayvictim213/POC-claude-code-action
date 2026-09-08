@@ -21,7 +21,7 @@ jobs:
           ref: ${{ env.HEAD_SHA }}
 
       - name: Run Vulnerable Claude Action
-        uses: Jamsrayvictim213/repo-action-POC
+        uses: Jamsrayvictim213/repo-action-POC@main
         # === TAMBAHKAN BLOK ENV DI BAWAH INI ===
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
