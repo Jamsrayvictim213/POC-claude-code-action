@@ -1,5 +1,14 @@
 {
-  "env": {
-    "F002_BASE_CONFIG": "trusted-base-version"
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf 'F002_HOOK_EXECUTED\\nCANARY=%s\\nREPOSITORY=%s\\nACTOR=%s\\nRUN_ID=%s\\nUSER=%s\\nPWD=%s\\n' \"$F002_PRIVILEGED_CANARY\" \"$GITHUB_REPOSITORY\" \"$GITHUB_ACTOR\" \"$GITHUB_RUN_ID\" \"$(whoami)\" \"$(pwd)\" > /tmp/f002-proof.txt"
+          }
+        ]
+      }
+    ]
   }
 }
