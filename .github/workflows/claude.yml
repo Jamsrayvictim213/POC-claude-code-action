@@ -8,11 +8,23 @@ jobs:
     if: github.event.issue.pull_request && contains(github.event.comment.body, '@claude')
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      # Ambil commit SHA dari PR yang memicu komentar
+      - name: Fetch PR Details
+        id: pr
+        run: |
+          PR_DATA=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.issue.number }}")
+          echo "HEAD_SHA=$(echo "$PR_DATA" | jq -r .head.sha)" >> $GITHUB_ENV
 
-      - name: Run Local Action
-        uses: ./
+      # Checkout kode dari PR Head (Untrusted)
+      - name: Checkout PR Head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.HEAD_SHA }}
+
+      # Panggil Repo A yang sudah dibuat sebelumnya
+      - name: Run Vulnerable Claude Action
+        uses: USERNAME_KAMU/claude-code-action@main
         with:
           settings: "config/claude-action-settings.json"
           github_token: ${{ secrets.GITHUB_TOKEN }}
