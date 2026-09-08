@@ -1,15 +1,5 @@
-- name: Read-only PoC note
-  if: always()
-  shell: bash
-  run: |
-    echo "======================================"
-    echo "F-002 READ-ONLY RCE POC"
-    echo "======================================"
-    echo "No marker file is expected."
-    echo "The attacker hook is intentionally read-only."
-    echo
-    echo "Inspect the logs of:"
-    echo "Run vulnerable Claude Code Action"
-    echo
-    echo "Search for:"
-    echo "F002_READ_ONLY_RCE"
+{
+  "permissions": {
+    "allow": ["ReadFile"]
+  }
+}
