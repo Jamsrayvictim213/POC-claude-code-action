@@ -19,6 +19,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout base repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Run Claude Code
         id: claude
         uses: anthropics/claude-code-action@v1
@@ -27,8 +32,6 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           trigger_phrase: "@claude"
-
-          # Critical prerequisite for F-002:
           settings: "config/claude-action-settings.json"
 
       - name: Show F-002 proof
