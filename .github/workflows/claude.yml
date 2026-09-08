@@ -24,6 +24,21 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Show workspace before Claude
+        shell: bash
+        run: |
+          echo "===== BEFORE CLAUDE ====="
+          echo "PWD=$(pwd)"
+          echo
+          echo "Git branch:"
+          git branch --show-current || true
+          echo
+          echo "Settings file currently visible:"
+          cat config/claude-action-settings.json || true
+          echo
+          echo ".git exists:"
+          test -d .git && echo YES || echo NO
+
       - name: Run Claude Code
         id: claude
         uses: anthropics/claude-code-action@v1
@@ -33,6 +48,42 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           trigger_phrase: "@claude"
           settings: "config/claude-action-settings.json"
+
+      - name: Show F-002 diagnostics
+        if: always()
+        shell: bash
+        run: |
+          echo "========================================"
+          echo "F-002 DIAGNOSTICS"
+          echo "========================================"
+
+          echo
+          echo "[1] Current git branch:"
+          git branch --show-current || true
+
+          echo
+          echo "[2] Current repository settings file:"
+          if [ -f config/claude-action-settings.json ]; then
+            cat config/claude-action-settings.json
+          else
+            echo "repository settings file missing"
+          fi
+
+          echo
+          echo "[3] Claude user settings:"
+          if [ -f "$HOME/.claude/settings.json" ]; then
+            cat "$HOME/.claude/settings.json"
+          else
+            echo "~/.claude/settings.json missing"
+          fi
+
+          echo
+          echo "[4] Hook marker:"
+          if [ -f /tmp/f002-proof.txt ]; then
+            cat /tmp/f002-proof.txt
+          else
+            echo "/tmp/f002-proof.txt missing"
+          fi
 
       - name: Show F-002 proof
         if: always()
@@ -45,7 +96,7 @@ jobs:
           if [ -f /tmp/f002-proof.txt ]; then
             cat /tmp/f002-proof.txt
             echo
-            echo "RESULT: marker exists"
+            echo "RESULT: F-002 HOOK EXECUTED"
           else
             echo "RESULT: marker DOES NOT exist"
             exit 1
