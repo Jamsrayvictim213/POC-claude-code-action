@@ -24,7 +24,7 @@ jobs:
 
       # Panggil Repo A yang sudah dibuat sebelumnya
       - name: Run Vulnerable Claude Action
-        uses: USERNAME_KAMU/claude-code-action@main
+        uses: Jamsrayvictim213/repo-action-POC@main
         with:
           settings: "config/claude-action-settings.json"
           github_token: ${{ secrets.GITHUB_TOKEN }}
