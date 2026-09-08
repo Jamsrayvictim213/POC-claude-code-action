@@ -75,8 +75,7 @@ jobs:
         id: claude
 
         # GANTI SHA DI BAWAH DENGAN HASIL git rev-parse HEAD
-        uses: anthropics/claude-code-action@abc1234567890abc1234567890abc1234567890
-
+        uses: anthropics/claude-code-action@9c5ddab2e6d17b83ea679153b31f1d5f023cf636
         env:
           F002_PRIVILEGED_CANARY: "BASE_ONLY_CANARY_F002_7F3B91"
 
